@@ -1,0 +1,4 @@
+fastapi==0.115.12
+pillow==11.1.0
+pydantic==2.11.3
+websockets==15.0.1
