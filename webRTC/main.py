@@ -1,5 +1,5 @@
-# FastAPI + WebSocket 예시
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+# from kafka import KafkaProducer
 from PIL import Image
 import base64
 import io
@@ -9,9 +9,10 @@ import uuid
 
 app = FastAPI()
 
-@app.get("/")
-async def root():
-    return {"message": "FastAPI WebSocket 서버입니다."}
+""" producer = KafkaProducer(
+    bootstrap_servers='localhost:9092',
+    value_serializer=lambda v: json.dumps(v).encode('utf-8')
+) """
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
@@ -25,15 +26,16 @@ async def websocket_endpoint(websocket: WebSocket):
 
             # base64 데이터를 .txt 파일로 저장
             u = uuid.uuid4()
-            with open(f"{u}_base64.txt", "w") as txt_file:
-                txt_file.write(img_base64)
+            """ with open(f"{u}_base64.txt", "w") as txt_file:
+                txt_file.write(img_base64) """
 
             img_bytes = base64.b64decode(img_base64)
             image = Image.open(io.BytesIO(img_bytes))
+            width, height = image.size
 
             # uuid를 사용하여 고유한 이미지 파일명 생성
             unique_filename = f"{u}.png"
-            image.save(unique_filename)
+            # image.save(unique_filename)
 
             # TODO: image → 모델에 전달 및 결과 처리
             print(f"[{datetime.now()}] 이미지 수신 및 저장 완료")

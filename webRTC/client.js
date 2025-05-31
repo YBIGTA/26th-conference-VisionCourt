@@ -8,52 +8,72 @@ try {
   document.getElementById("message").textContent = "서버 연결에 실패했습니다";
 }
 
-// 웹캠 영상 요소
-const video = document.getElementById('video');
-
-// 비디오 프레임 캡처용 캔버스
-const canvas = document.getElementById('canvas');
+const video = document.getElementById("video");
+const canvas = document.getElementById("canvas");
 const context = canvas.getContext("2d");
 
-// WebRTC를 사용해 카메라 접근
+let isSending = false;
+let videoStream = null;
+let uploadVideo = false;
+
+const startButton = document.getElementById("startButton");
+const stopButton = document.getElementById("stopButton");
+
+startButton.addEventListener("click", () => {
+  video.play();
+  isSending = true;
+  document.getElementById("message").textContent = "이미지 전송 중";
+});
+
+stopButton.addEventListener("click", () => {
+  video.pause();
+  isSending = false;
+  document.getElementById("message").textContent = "이미지 전송 대기";
+});
+
+// 업로드한 파일 재생
+document.getElementById("uploadButton").addEventListener("click", () => {
+  const fileInput = document.getElementById("upload");
+  const file = fileInput.files[0];
+  if (file) {
+    uploadVideo = true;
+    const url = URL.createObjectURL(file);
+    video.srcObject = null; // 웹캠 stream 제거
+    video.src = url;
+    // video.play(); // 자동재생 막기
+  }
+});
+
+// 웹캠 연결
 navigator.mediaDevices.getUserMedia({ video: true, audio: false })
   .then(stream => {
+    videoStream = stream;
     video.srcObject = stream;
   })
   .catch(err => {
     console.error("카메라 접근 실패:", err);
   });
 
-// 전송 상태 관리 변수
-let isSending = false;
-
-// 시작 버튼과 종료 버튼
-const startButton = document.getElementById("startButton");
-const stopButton = document.getElementById("stopButton");
-
-// 버튼 클릭 이벤트 핸들러
-startButton.addEventListener("click", () => {
-  isSending = true;
-  document.getElementById("message").textContent = "이미지 전송 중"; // 메시지 업데이트
+// 영상 메타데이터 로드 후 캔버스 사이즈 설정
+video.addEventListener("loadedmetadata", () => {
+  if (uploadVideo) {
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+  } else {
+    canvas.width = 480;
+    canvas.height = 360;
+  }
 });
 
-stopButton.addEventListener("click", () => {
-  isSending = false;
-  document.getElementById("message").textContent = "이미지 전송 대기"; // 메시지 업데이트
-});
-
-// WebSocket이 열리면 이미지 전송 제어
+// WebSocket 연결 후 프레임 전송
 socket.addEventListener("open", () => {
-  console.log("WebSocket 연결 성공");
+  document.getElementById("websocket").textContent = "WebSocket 연결 성공";
 
   setInterval(() => {
     if (isSending) {
-      // 현재 비디오 프레임을 캔버스로 캡처
       context.drawImage(video, 0, 0, canvas.width, canvas.height);
-      const imageDataURL = canvas.toDataURL("image/jpeg"); // base64로 변환
-
-      // WebSocket으로 JSON 형식으로 전송
+      const imageDataURL = canvas.toDataURL("image/jpeg");
       socket.send(JSON.stringify({ image: imageDataURL }));
     }
-  }, 100); // 0.1초마다 전송 => 10 FPS
+  }, 100); // 100ms 간격
 });

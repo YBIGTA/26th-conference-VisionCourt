@@ -2,7 +2,7 @@
 <html lang="ko">
 <head>
   <meta charset="UTF-8">
-  <title>WebRTC + WebSocket 이미지 전송</title>
+  <title>이미지 전송 테스트</title>
   <style>
     body {
       font-family: sans-serif;
@@ -16,9 +16,9 @@
   </style>
 </head>
 <body>
-  <h2>웹캠 영상 전송 (WebRTC + WebSocket)</h2>
+  <h2>이미지 전송 테스트</h2>
   <div>
-    <video id="video" autoplay playsinline width="480" height="360"></video>
+    <video id="video" playsinline width="480" height="360" controls></video>
     <canvas id="canvas" width="480" height="360"></canvas>
     <div>
       <button id="startButton">시작</button>
@@ -28,7 +28,12 @@
       <p id="message">이미지 전송 대기</p>
       <p id="websocket"></p>
     </div>
+    <div>
+      <input type="file" id="upload" accept="video/*">
+      <button id="uploadButton">업로드</button>
+    </div>
   </div>
-  <script src="client.js"></script>
+
+  <script src="script.js"></script>
 </body>
 </html>
