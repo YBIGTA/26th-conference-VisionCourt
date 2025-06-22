@@ -128,7 +128,7 @@ def main():
     project_root = os.path.dirname(scripts_dir)
     
     # JSON 출력 폴더 생성
-    json_output_dir = os.path.join(project_root, 'frame_events')
+    json_output_dir = os.path.join(project_root, 'event_results')
     os.makedirs(json_output_dir, exist_ok=True)
     
     # 분석기 초기화

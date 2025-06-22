@@ -1,0 +1,9 @@
+{
+  "main_clock_action": "start",
+  "shot_clock_action": "reset",
+  "event": "2점슛 시도",
+  "team": "team_2",
+  "score": 0,
+  "success": false,
+  "timestamp": "00:00:06"
+}

@@ -14,8 +14,7 @@ class BasketballEventAnalyzer:
         self.prev_hoop_detected = False
         self.ball_trajectory = deque(maxlen=30)  # 볼 궤적 추적 (더 긴 구간으로 확장)
         
-        # 슛 관련 상태 (더 정교한 감지를 위해)
-        self.shot_attempted = False
+        # 슛 관련 상태
         self.shot_released = False
         self.shot_release_possessor = None
         self.shot_release_team = None
@@ -215,18 +214,23 @@ class BasketballEventAnalyzer:
                         # 두 방향 벡터의 내적 계산
                         dot_product = direction_1[0] * direction_2[0] + direction_1[1] * direction_2[1]
                         
-                        # 방향 변화 감지 (내적이 0.7 미만이면 방향 변화로 간주)
-                        direction_changed = dot_product < 0.7
+                        # 방향 변화 감지 (내적이 0.8 미만이면 방향 변화로 간주)
+                        direction_changed = dot_product < 0.8
                         
                         if direction_changed:
                             return True, ball_center
                 
                 # 가속도 변화 감지
-                if len(self.ball_acceleration_history) >= 2:
-                    recent_accel = list(self.ball_acceleration_history)[-2:]
+                if len(self.ball_acceleration_history) >= 3:
+                    recent_accel = list(self.ball_acceleration_history)[-3:]
                     
-                    # 가속도 변화가 급격한지 확인 (절댓값이 100 이상)
-                    if abs(recent_accel[-1]) > 100:
+                    # 가속도 변화량 계산 (이전 가속도와 현재 가속도의 차이)
+                    accel_change_1 = abs(recent_accel[1] - recent_accel[0])  # 첫 번째 변화
+                    accel_change_2 = abs(recent_accel[2] - recent_accel[1])  # 두 번째 변화
+                    
+                    # 가속도 변화가 급격한지 확인 (충돌 시 가속도가 불연속적으로 변화)
+                    # 변화량이 150 이상이면 충돌로 간주
+                    if accel_change_1 > 150 or accel_change_2 > 150:
                         return True, ball_center
         
         return False, None
@@ -451,15 +455,13 @@ class BasketballEventAnalyzer:
         # 선수 매칭
         player_matches = self.match_players(detection_players, tracking_players)
         
-        # 볼 소유권 판별
+        # 볼 소유권 판별 (고급 2D 매핑 기반)
         if ball:
-            max_iou = 0
-            for player_idx, player_info in player_matches.items():
-                iou_val = self.iou(player_info['bbox'], ball['bbox'])
-                if iou_val > self.possession_thresh and iou_val > max_iou:
-                    max_iou = iou_val
-                    current_possessor = player_info['track_id']
-                    current_team = player_info['team_id']
+            current_possessor, current_team = self.detect_possession_advanced(
+                ball, detection_players, player_matches
+            )
+        else:
+            current_possessor, current_team = None, None
         
         # 볼 소유권 변경 시 개인 통계 업데이트
         if current_possessor and current_possessor != self.prev_ball_possessor:
@@ -538,7 +540,7 @@ class BasketballEventAnalyzer:
                 self.team_b_score += 2
             self.last_score_frame = self.current_frame
         
-        # 3. 고급 리바운드 감지
+        # 3. 리바운드 감지 (기존 로직 유지)
         rebound_player = self.detect_rebound_advanced(ball, detection_players, current_possessor)
         if rebound_player:
             events.append({
@@ -555,7 +557,7 @@ class BasketballEventAnalyzer:
             else:
                 self.team_b_rebounds += 1
         
-        # 4. 고급 어시스트 감지
+        # 4. 어시스트 감지 (기존 로직 유지)
         assist_player = self.detect_assist_advanced(ball, detection_players, current_possessor, current_team)
         if assist_player:
             events.append({
@@ -608,3 +610,154 @@ class BasketballEventAnalyzer:
     def get_player_statistics(self):
         """개인별 통계 반환"""
         return self.player_stats
+
+    def convert_to_court_coordinates(self, x, y, court_width=28, court_height=15):
+        """픽셀 좌표를 농구장 좌표로 변환 (2D 매핑 가정)"""
+        # 실제 농구장 크기 (미터): 28m x 15m (3x3 농구장)
+        # 픽셀 좌표를 실제 농구장 좌표로 변환
+        court_x = (x / 640) * court_width  # 640은 이미지 너비 가정
+        court_y = (y / 480) * court_height  # 480은 이미지 높이 가정
+        return court_x, court_y
+
+    def calculate_3d_distance(self, pos1, pos2):
+        """3D 공간에서의 거리 계산 (농구장 좌표계)"""
+        # 농구장 좌표계에서의 유클리드 거리
+        dx = pos1[0] - pos2[0]
+        dy = pos1[1] - pos2[1]
+        return np.sqrt(dx**2 + dy**2)
+
+    def detect_possession_advanced(self, ball, players, player_matches):
+        """고급 볼 소유권 판별 - 2D 매핑 기반"""
+        if not ball:
+            return None, None
+        
+        ball_center = ball['center']
+        ball_court_pos = self.convert_to_court_coordinates(ball_center[0], ball_center[1])
+        
+        best_possessor = None
+        best_team = None
+        min_distance = float('inf')
+        
+        for player_idx, match_info in player_matches.items():
+            player_bbox = match_info['bbox']
+            player_center = [(player_bbox[0] + player_bbox[2])/2, 
+                           (player_bbox[1] + player_bbox[3])/2]
+            player_court_pos = self.convert_to_court_coordinates(player_center[0], player_center[1])
+            
+            # 3D 거리 계산
+            distance_3d = self.calculate_3d_distance(ball_court_pos, player_court_pos)
+            
+            # 선수의 손 위치 추정 (농구장 좌표계에서)
+            # 일반적으로 선수의 손은 몸 중심보다 위쪽에 위치
+            hand_offset = 1.0  # 미터 단위
+            hand_pos = (player_court_pos[0], player_court_pos[1] - hand_offset)
+            hand_distance = self.calculate_3d_distance(ball_court_pos, hand_pos)
+            
+            # 더 가까운 거리 사용 (손 또는 몸 중심)
+            effective_distance = min(distance_3d, hand_distance)
+            
+            # 볼 소유권 판별 조건: 2미터 이내에 있고 가장 가까운 선수
+            if effective_distance < 2.0 and effective_distance < min_distance:
+                min_distance = effective_distance
+                best_possessor = match_info['track_id']
+                best_team = match_info['team_id']
+        
+        return best_possessor, best_team
+
+    def detect_rebound_advanced_2d(self, ball, players, current_possessor, player_matches):
+        """고급 리바운드 감지 - 2D 매핑 기반"""
+        if not ball or not self.prev_ball_center:
+            return None
+        
+        ball_center = ball['center']
+        ball_court_pos = self.convert_to_court_coordinates(ball_center[0], ball_center[1])
+        
+        # 1. 볼이 아래로 떨어지는지 확인 (농구장 좌표계)
+        prev_ball_court_pos = self.convert_to_court_coordinates(
+            self.prev_ball_center[0], self.prev_ball_center[1]
+        )
+        vertical_movement = ball_court_pos[1] - prev_ball_court_pos[1]
+        
+        if vertical_movement > 0.5:  # 0.5미터 이상 아래로 이동
+            # 2. 볼이 림 근처에서 튕겨나왔는지 확인
+            if len(self.ball_trajectory) >= 5:
+                recent_traj = list(self.ball_trajectory)[-5:]
+                y_coords = [pos[1] for pos in recent_traj]
+                
+                # 볼이 위로 올라갔다가 아래로 떨어지는 패턴 (리바운드의 특징)
+                if (y_coords[0] > y_coords[2] and  # 처음보다 중간이 위
+                    y_coords[2] < y_coords[-1]):   # 중간보다 마지막이 아래
+                    
+                    # 3. 가장 가까운 선수 찾기 (농구장 좌표계)
+                    best_player = None
+                    min_distance = float('inf')
+                    
+                    for player_idx, match_info in player_matches.items():
+                        player_bbox = match_info['bbox']
+                        player_center = [(player_bbox[0] + player_bbox[2])/2, 
+                                       (player_bbox[1] + player_bbox[3])/2]
+                        player_court_pos = self.convert_to_court_coordinates(
+                            player_center[0], player_center[1]
+                        )
+                        
+                        distance_3d = self.calculate_3d_distance(ball_court_pos, player_court_pos)
+                        
+                        if distance_3d < min_distance:
+                            min_distance = distance_3d
+                            best_player = {
+                                'player_idx': player_idx,
+                                'track_id': match_info['track_id'],
+                                'team_id': match_info['team_id'],
+                                'distance': distance_3d
+                            }
+                    
+                    # 4. 선수가 볼 근처에 있고, 볼 소유권이 변경되었는지 확인
+                    if (best_player and 
+                        best_player['distance'] < 3.0 and  # 3미터 이내
+                        current_possessor != self.prev_ball_possessor):
+                        return best_player
+        
+        return None
+
+    def detect_assist_advanced_2d(self, ball, players, current_possessor, current_team, player_matches):
+        """고급 어시스트 감지 - 2D 매핑 기반"""
+        if not ball or not self.prev_ball_possessor:
+            return None
+        
+        # 1. 최근에 득점이 발생했는지 확인 (5프레임 이내)
+        if (self.last_score_frame and 
+            self.current_frame - self.last_score_frame <= 5):
+            
+            # 2. 득점 직전에 볼을 소유했던 선수가 다른 팀인지 확인
+            if (self.prev_ball_possessor_team != current_team and 
+                self.prev_ball_possessor_team is not None):
+                
+                # 3. 어시스트 조건: 슛 시도 후 3프레임 이내에 득점
+                if (self.last_shot_frame and 
+                    self.last_score_frame - self.last_shot_frame <= 3):
+                    
+                    # 4. 이전 볼 소유자 찾기 (농구장 좌표계 기반)
+                    ball_center = ball['center']
+                    ball_court_pos = self.convert_to_court_coordinates(ball_center[0], ball_center[1])
+                    
+                    for player_idx, match_info in player_matches.items():
+                        if match_info['team_id'] == self.prev_ball_possessor_team:
+                            player_bbox = match_info['bbox']
+                            player_center = [(player_bbox[0] + player_bbox[2])/2, 
+                                           (player_bbox[1] + player_bbox[3])/2]
+                            player_court_pos = self.convert_to_court_coordinates(
+                                player_center[0], player_center[1]
+                            )
+                            
+                            # 농구장 좌표계에서의 거리 계산
+                            distance_3d = self.calculate_3d_distance(ball_court_pos, player_court_pos)
+                            
+                            # 패스 가능한 거리 내에 있는지 확인 (10미터 이내)
+                            if distance_3d < 10.0:
+                                return {
+                                    'player_idx': player_idx,
+                                    'track_id': match_info['track_id'],
+                                    'team_id': match_info['team_id']
+                                }
+        
+        return None
