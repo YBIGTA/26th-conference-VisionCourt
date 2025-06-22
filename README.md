@@ -16,18 +16,12 @@ visioncourt/
 ├── basketball_event/
 │   ├── __init__.py
 │   ├── detector.py          # 이벤트 감지 핵심 로직
-│   └── 설명.txt
 ├── data/
 │   ├── detection_output/    # 첫 번째 모델 출력 (프레임별 txt)
 │   ├── tracking_output/     # 두 번째 모델 출력 (프레임별 txt)
-│   ├── frames_finetuned_output/  # 프레임 이미지
-│   └── labels/             # 라벨 파일
 ├── frame_events/           # 분석 결과 JSON 파일들
 ├── scripts/
 │   └── run_analysis.py     # 메인 분석 스크립트
-├── analysis_results.csv    # 분석 결과
-├── game_statistics.csv     # 게임 통계
-├── player_statistics.csv   # 선수별 통계
 └── README.md
 ```
 
