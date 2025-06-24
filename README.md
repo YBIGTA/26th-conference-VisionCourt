@@ -3,6 +3,7 @@ yolov12env\Lib\site-packages\ultralytics\engine
 여기 경로에 predictor.py 대체하면 됨!
 
 예시)
+
 1 0.423556 0.624743 0.060128 0.270062 0
 
 1 0.374629 0.632400 0.056194 0.247209 1
