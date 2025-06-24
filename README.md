@@ -1,178 +1,122 @@
-# VisionCourt - Basketball Event Analysis System
-
-## 프로젝트 개요
-
-VisionCourt는 컴퓨터 비전을 활용한 농구 이벤트 분석 시스템입니다. 두 개의 컴퓨터 비전 모델(Detection 모델과 Tracking 모델)의 출력을 결합하여 농구 경기 중 발생하는 이벤트(득점, 리바운드, 어시스트, 슛 등)를 실시간으로 감지하고 분석합니다.
+# visioncourt
 
 ## 프로젝트 구조
 
 ```
 visioncourt/
-├── basketball_event/          # 핵심 분석 모듈
+│
+├── basketball_event/
 │   ├── __init__.py
-│   └── detector.py           # BasketballEventAnalyzer 클래스
-├── data/                     # 입력 데이터
-│   ├── detection_output/     # Detection 모델 출력 (프레임별 txt 파일)
-│   └── tracking_output/      # Tracking 모델 출력 (프레임별 txt 파일)
-├── event_results/            # 분석 결과 출력
-│   └── frame_*.json         # 프레임별 이벤트 JSON 파일
-├── scripts/                  # 실행 스크립트
-│   └── run_analysis.py      # 메인 분석 실행 스크립트
-└── README.md
+│   ├── detector.py              # 농구 이벤트(소유권, 슛, 득점, 리바운드, 어시스트) 판별 함수 모듈
+│   └── player_event_stats.py    # 이벤트별 선수(track_id) 기록 추출 함수 모듈
+│
+├── scripts/
+│   ├── run_analysis.py          # detection_output을 분석해 event_results 생성
+│   └── run_player_stats.py      # event_results, tracking_output을 분석해 player_event_results 생성
+│
+├── data/
+│   └── detection_output/        # 프레임별 detection 더미 데이터(txt)
+│   └── tracking_output/         # 프레임별 tracking 더미 데이터(txt)
+│
+├── event_results/               # 프레임별 이벤트 분석 결과(json)
+│
+├── player_event_results/        # 이벤트별 선수 기록 결과(json)
+│
+└── README.md                    # (본 문서)
 ```
 
-## 주요 기능
+---
 
-### 1. 이벤트 감지
-- **슛 감지**: 볼이 림을 향해 이동하며 방향/가속도 변화 시 감지
-- **득점 감지**: 볼이 림 근처에서 방향 변화 시 감지
-- **리바운드 감지**: 득점 후 볼 소유권 변경 시 감지
-- **어시스트 감지**: 슛 시도 후 득점 시 마지막 패스 선수 감지
-- **골밑슛 감지**: 낮은 궤적과 수평 이동 패턴으로 감지
+## 1. 주요 모듈 및 스크립트 설명
 
-### 2. 클록 관리
-- **메인 클록**: 경기 시간 관리
-- **샷 클록**: 3x3 농구 규칙에 따른 12초 샷 클록
-- **클록 액션**: start, pause, reset 상태 관리
+### `basketball_event/detector.py`
+- **역할**: 프레임별 detection 데이터로부터 농구 이벤트(소유권, 슛, 득점, 리바운드, 어시스트)를 판별하는 함수 제공
+- **주요 함수**
+  - `get_possession(frames, ...)` : 공 소유 선수 인덱스 판별
+  - `detect_shot(frames, possession_history, ...)` : 슛 이벤트 감지 (진행방향 불연속, 득점 포함)
+  - `detect_score(frames, shot_events, ...)` : 득점 이벤트 감지
+  - `detect_rebound(frames, ...)` : 리바운드 이벤트 감지
+  - `detect_assist(frames, ...)` : 어시스트 이벤트 감지
 
-### 3. 통계 추적
-- 팀별 득점, 리바운드, 어시스트, 슛 시도 통계
-- 개인별 선수 통계 (track_id 기반)
-- 볼 소유권 추적
+### `basketball_event/player_event_stats.py`
+- **역할**: 이벤트 결과와 tracking_output을 매칭하여, 득점/리바운드/어시스트가 발생한 선수의 track_id, 좌표, timestamp를 이벤트별 json으로 저장
+- **주요 함수**
+  - `export_event_player_json(event_results_dir, tracking_output_dir, output_dir)`
+    - 각 이벤트별로 json 파일(`score_frame_0004_track_3.json` 등) 생성
 
-## 입력 데이터 형식
+### `scripts/run_analysis.py`
+- **역할**: detection_output의 프레임별 txt를 분석하여 event_results 폴더에 프레임별 이벤트 결과(json) 생성
+- **주요 동작**
+  - main_clock, shot_clock, possession, shot, score, rebound, assist 등 기록
 
-### Detection 모델 출력 (detection_output/frame_*.txt)
-```
-frame_id class_id x_center y_center width height team_id
-```
-- `class_id`: 0=볼, 1=선수, 2=림
-- `team_id`: 0=팀A, 1=팀B
+### `scripts/run_player_stats.py`
+- **역할**: event_results와 tracking_output을 분석하여 player_event_results 폴더에 이벤트별 선수 기록(json) 생성
+- **주요 동작**
+  - 득점/리바운드/어시스트가 발생한 선수의 track_id, 좌표, timestamp를 json으로 저장
 
-### Tracking 모델 출력 (tracking_output/frame_*.txt)
-```
-frame_id track_id x_center y_center width height
-```
-- `track_id`: 1~6 (개별 선수 식별)
+---
 
-## 출력 데이터 형식
+## 2. 더미 데이터셋 포맷
 
-### 이벤트 결과 (event_results/frame_*.json)
-```json
-{
-  "main_clock_action": "start",
-  "shot_clock_action": "start",
-  "events": [
-    {
-      "event": "2점슛 성공",
-      "team": "team_1",
-      "score": 2,
-      "success": true,
-      "timestamp": "00:00:15"
-    }
-  ]
-}
-```
+### `data/detection_output/frame_XXXX.txt`
+- 각 프레임별 detection 결과
+- 포맷:  
+  ```
+  <frame_id> <class_id> <x_center> <y_center> <width> <height> <team_id> <timestamp>
+  ```
+  - class_id: 0=공, 1=선수, 2=림
+  - team_id: 선수만 0/1, 공/림은 0
+  - timestamp: 해당 프레임의 서버시간(초, float)
 
-## 기술적 특징
+### `data/tracking_output/frame_XXXX.txt`
+- 각 프레임별 tracking 결과 (선수만)
+- 포맷:  
+  ```
+  <frame_id> <class_id> <x_center> <y_center> <width> <height> <track_id>
+  ```
+  - class_id: 1(선수)
+  - track_id: 1~6 (선수별 고유번호)
 
-### 1. 고급 이벤트 감지 알고리즘
-- **볼 궤적 분석**: 최대 30프레임의 볼 궤적 추적
-- **속도/가속도 분석**: 볼의 물리적 움직임 패턴 분석
-- **2D 매핑**: 코트 좌표계 변환을 통한 정확한 거리 계산
-- **IoU 기반 매칭**: 선수 detection과 tracking 데이터 매칭
+---
 
-### 2. 3x3 농구 규칙 적용
-- 12초 샷 클록
-- 득점 시 샷 클록 리셋
-- 리바운드 시 샷 클록 리셋
+## 3. 결과 데이터 포맷
 
-### 3. 실시간 처리
-- 프레임별 실시간 분석
-- 30fps 기준 타임스탬프 생성
-- 상태 기반 이벤트 감지
+### `event_results/frame_XXXX.json`
+- 프레임별 이벤트 분석 결과
+- 주요 필드:
+  - main_clock: "MM:SS"
+  - shot_clock: int(초)
+  - possession, shot, score, rebound, assist: 선수 인덱스(없으면 null)
+  - timestamp: "YYYY-MM-DD HH:MM:SS.sss"
 
-## 사용 방법
+### `player_event_results/score_frame_XXXX_track_YY.json` 등
+- 득점/리바운드/어시스트가 발생한 선수별 기록
+- 주요 필드:
+  - frame_id: int
+  - event: "score" | "rebound" | "assist"
+  - track_id: int (1~6)
+  - position: [x, y]
+  - timestamp: "YYYY-MM-DD HH:MM:SS.sss"
 
-### 1. 환경 설정
-```bash
-cd /path/to/visioncourt
-```
+---
 
-### 2. 데이터 준비
-- `data/detection_output/` 폴더에 프레임별 detection 결과 파일 배치
-- `data/tracking_output/` 폴더에 프레임별 tracking 결과 파일 배치
+## 4. 실행 예시
 
-### 3. 분석 실행
-```bash
-python scripts/run_analysis.py
-```
+1. **분석 실행**
+   ```bash
+   PYTHONPATH=. python3 scripts/run_analysis.py
+   ```
+   → event_results/에 프레임별 이벤트 결과 생성
 
-### 4. 결과 확인
-- `event_results/` 폴더에서 프레임별 JSON 결과 파일 확인
+2. **선수별 이벤트 기록 추출**
+   ```bash
+   PYTHONPATH=. python3 scripts/run_player_stats.py
+   ```
+   → player_event_results/에 이벤트별 선수 기록 json 생성
 
-## 이벤트 감지 로직
+---
 
-### 슛 감지
-1. 볼이 선수로부터 떨어짐 확인
-2. 볼이 림을 향해 이동하는지 확인
-3. 림 근처(100픽셀 이내)에서 방향/가속도 변화 감지
-4. 조건 만족 시 슛 이벤트 발생
+## 5. 참고
 
-### 득점 감지
-1. 볼이 림 근처에서 방향 변화 감지
-2. 이전 프레임과 현재 프레임의 방향 벡터 계산
-3. 내적(dot product) < 0.8 시 득점으로 판정
-
-### 리바운드 감지
-1. 득점 이벤트 발생 후
-2. 볼 소유권이 변경되는 시점 감지
-3. 새로운 소유자가 리바운드로 판정
-
-### 어시스트 감지
-1. 슛 시도 후 득점 발생 시
-2. 슛 시도 전 마지막 패스 선수 감지
-3. 해당 선수를 어시스트로 판정
-
-## 클록 관리 로직
-
-### 샷 클록
-- **시작**: 볼 소유권 획득 시
-- **리셋**: 득점, 리바운드, 슛 시도 시
-- **위반**: 12초 경과 시
-
-### 메인 클록
-- 경기 시작부터 종료까지 연속 실행
-- 이벤트 발생 시에도 계속 진행
-
-## 향후 개발 계획
-
-### 1. 2D 매핑 고도화
-- 코트 좌표계 정확도 향상
-- 실제 거리 기반 이벤트 감지
-- 3D 공간 분석 도입
-
-### 2. 이벤트 감지 정확도 향상
-- 머신러닝 기반 패턴 학습
-- 더 정교한 물리적 모델링
-- 노이즈 필터링 개선
-
-### 3. 실시간 스트리밍 지원
-- 실시간 비디오 스트림 처리
-- 지연 시간 최소화
-- 웹 인터페이스 개발
-
-## 기술 스택
-
-- **Python**: 메인 개발 언어
-- **NumPy**: 수치 계산 및 배열 처리
-- **Pandas**: 데이터 처리 및 분석
-- **JSON**: 결과 데이터 직렬화
-
-## 라이선스
-
-이 프로젝트는 교육 및 연구 목적으로 개발되었습니다.
-
-## 기여
-
-프로젝트 개선을 위한 제안이나 버그 리포트는 언제든 환영합니다. 
+- 더미 데이터셋은 예시이므로 실제 분석을 위해서는 detection/tracking 모델의 출력 포맷에 맞게 데이터를 준비해야 합니다.
+- detector.py의 파라미터(림 근처 거리, 각도 등)는 실제 데이터에 맞게 조정 가능합니다. 
