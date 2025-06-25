@@ -5,6 +5,8 @@ import json
 from glob import glob
 from datetime import datetime, timedelta
 from basketball_event import detector
+from basketball_event.detector import bbox_iou, parse_frame_detections
+import numpy as np
 
 DATA_DIR = os.path.join(os.path.dirname(__file__), '..', 'data', 'detection_output')
 RESULT_DIR = os.path.join(os.path.dirname(__file__), '..', 'event_results')
@@ -71,10 +73,21 @@ def main():
             detections_wo_ball.insert(0, [0, x, y, w, h, -1])
         frames[i] = detections_wo_ball
 
+    # 림 중심 좌표 추출
+    rim_centers = []
+    for i, detections in enumerate(frames):
+        rim = None
+        for det in detections:
+            if det[0] == 2:
+                rim = (det[1], det[2], det[3], det[4])
+                break
+        rim_center = (rim[0], rim[1]) if rim else None
+        rim_centers.append(rim_center)
+
     # 이벤트 판별
-    possession_history = detector.get_possession(frames, min_frames=15)
+    possession_history = detector.get_possession(frames, min_frames=15, initial_frames=15)
     shot_events = detector.detect_shot(frames, possession_history)
-    score_events = detector.detect_score(frames, shot_events)
+    score_events, ball_rim_dists = detector.detect_score(frames, shot_events, ball_boxes, rim_centers)
     rebound_events = detector.detect_rebound(frames, shot_events, score_events, possession_history)
     assist_events = detector.detect_assist(frames, shot_events, score_events, possession_history, team_ids)
 
@@ -89,25 +102,16 @@ def main():
     last_score_team = None
     last_score_frame = None
 
-    # possession을 팀 번호로 변환(이전 팀 유지)
-    poss_team_history = []
-    last_team = None
-    for idx, poss_idx in enumerate(possession_history):
-        team = team_ids[idx][poss_idx] if poss_idx is not None and poss_idx < len(team_ids[idx]) else None
-        if team is not None:
-            last_team = team
-        poss_team_history.append(last_team)
-
     def get_team_from_idx(idx, team_list):
         return team_list[idx] if idx is not None and idx < len(team_list) else None
 
     for idx, frame_id in enumerate(frame_ids):
         # possession은 팀 인덱스(0 또는 1)로 바로 기록
         poss_team = possession_history[idx]
-        shot_team = get_team_from_idx(shot_events[idx], team_ids[idx])
-        score_team = get_team_from_idx(score_events[idx], team_ids[idx])
-        rebound_team = get_team_from_idx(rebound_events[idx], team_ids[idx])
-        assist_team = get_team_from_idx(assist_events[idx], team_ids[idx])
+        shot_team = shot_events[idx]
+        score_team = score_events[idx]
+        rebound_team = rebound_events[idx]
+        assist_team = assist_events[idx]
         # shot_clock 관리 (리셋 이벤트 발생시 12초로 초기화, 그 외에는 프레임마다 감소)
         shot_clock_action = None
         reset_needed = False
@@ -123,11 +127,11 @@ def main():
                     reset_needed = True
         elif rebound_events[idx] is not None:
             reset_needed = True
+        elif shot_events[idx] is not None:
+            reset_needed = True
         elif idx > 0:
-            prev_possessor = possession_history[idx-1]
-            prev_team = team_ids[idx-1][prev_possessor] if prev_possessor is not None and prev_possessor < len(team_ids[idx-1]) else None
-            curr_possessor = possession_history[idx]
-            curr_team = team_ids[idx][curr_possessor] if curr_possessor is not None and curr_possessor < len(team_ids[idx]) else None
+            prev_team = possession_history[idx-1]
+            curr_team = possession_history[idx]
             if prev_team is not None and curr_team is not None and prev_team != curr_team:
                 if shot_events[idx] is None and score_events[idx] is None and rebound_events[idx] is None:
                     reset_needed = True
@@ -138,6 +142,17 @@ def main():
         else:
             elapsed_frames = frame_id - last_shot_clock_reset_frame
             shot_clock = max(0.0, 12.0 - elapsed_frames / 30)
+        # 공-림 IoU 계산 (보정된 공 바운딩박스 사용)
+        ball = ball_boxes[idx]
+        rim = None
+        # rim은 detection에서 추출
+        for det in frames[idx]:
+            if det[0] == 2:
+                rim = (det[1], det[2], det[3], det[4])
+                break
+        ball_rim_iou = None
+        if ball and rim:
+            ball_rim_iou = bbox_iou(ball, rim)
         event = {
             'frame_id': frame_id,
             'main_clock': None,
@@ -149,7 +164,8 @@ def main():
             'score': score_team,
             'rebound': rebound_team,
             'assist': assist_team,
-            'timestamp': timestamps[idx] if timestamps[idx] is not None else None
+            'timestamp': timestamps[idx] if timestamps[idx] is not None else None,
+            'ball_rim_dist': ball_rim_dists[idx]
         }
         # main_clock 관리 (1초 단위 내림)
         if frame_id == 1:
