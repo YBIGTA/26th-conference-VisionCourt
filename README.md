@@ -60,9 +60,10 @@ visioncourt/
 
 ### `data/detection_output/frame_XXXX.txt`
 - 각 프레임별 detection 결과
+- **frame_id는 파일명(`frame_0001.txt` 등)에서 추출하며, 각 줄에는 frame_id 칼럼이 없음**
 - 포맷:  
   ```
-  <frame_id> <class_id> <x_center> <y_center> <width> <height> <team_id> <timestamp>
+  <class_id> <x_center> <y_center> <width> <height> <team_id> <timestamp>
   ```
   - class_id: 0=공, 1=선수, 2=림
   - team_id: 선수만 0/1, 공/림은 0
@@ -70,9 +71,10 @@ visioncourt/
 
 ### `data/tracking_output/frame_XXXX.txt`
 - 각 프레임별 tracking 결과 (선수만)
+- **frame_id는 파일명(`frame_0001.txt` 등)에서 추출하며, 각 줄에는 frame_id 칼럼이 없음**
 - 포맷:  
   ```
-  <frame_id> <class_id> <x_center> <y_center> <width> <height> <track_id>
+  <class_id> <x_center> <y_center> <width> <height> <track_id>
   ```
   - class_id: 1(선수)
   - track_id: 1~6 (선수별 고유번호)

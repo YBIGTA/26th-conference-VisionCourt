@@ -6,6 +6,7 @@ def export_event_player_json(event_results_dir, tracking_output_dir, output_dir)
     event_results_dir: 이벤트 결과 json들이 저장된 폴더
     tracking_output_dir: tracking_output/frame_XXXX.txt들이 저장된 폴더
     output_dir: 이벤트별 json을 저장할 폴더
+    (각 txt파일의 각 줄에는 frame_id 칼럼이 없고, 파일명에서 frame_id를 추출)
     """
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
@@ -28,12 +29,13 @@ def export_event_player_json(event_results_dir, tracking_output_dir, output_dir)
                 with open(track_txt, 'r') as tf:
                     lines = [line.strip().split() for line in tf if line.strip()]
                 # 선수만 (class_id==1)
-                players = [l for l in lines if l[1] == '1']
+                players = [l for l in lines if l[0] == '1']
                 if player_idx < len(players):
                     p = players[player_idx]
-                    track_id = int(p[6])
-                    x = float(p[2])
-                    y = float(p[3])
+                    # tracking_output: <class_id> <x_center> <y_center> <width> <height> <track_id>
+                    track_id = int(p[5])
+                    x = float(p[1])
+                    y = float(p[2])
                     # 이벤트 json 저장
                     out = {
                         'frame_id': frame_id,

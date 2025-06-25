@@ -43,43 +43,45 @@ def parse_frame_detections(detections):
             rim = (x, y, w, h)
     return ball, players, rim
 
-def get_possession(frames: List[List[List[float]]], min_frames: int = 3, dist_thresh: float = 50) -> List[Optional[int]]:
+def get_possession(
+    frames: List[List[List[float]]],
+    min_frames: int = 3,
+    dist_thresh: float = 50
+) -> List[Optional[int]]:
     """
-    각 프레임별로 소유권(선수 인덱스)을 반환. min_frames 이상 연속 소유시 확정.
-    반환: [None, 2, 2, 2, 3, ...] (프레임별 소유 선수 인덱스)
+    각 프레임별로 소유권(팀 인덱스, 0 또는 1)을 반환. min_frames 이상 연속 소유시 확정.
+    반환: [None, 0, 0, 1, 1, ...] (프레임별 소유 팀 인덱스)
     """
     possession_history = []
-    last_owner = None
+    last_team = None
     owner_count = 0
     for frame_idx, detections in enumerate(frames):
         ball, players, rim = parse_frame_detections(detections)
         if not ball or not players:
-            possession_history.append(None)
-            last_owner = None
+            possession_history.append(last_team)
             owner_count = 0
             continue
         ball_center = bbox_center(ball)
         min_dist = float('inf')
-        owner = None
-        for idx, player in enumerate(players):
+        owner_team = None
+        for player in players:
             player_center = bbox_center(player['bbox'])
             dist = euclidean(ball_center, player_center)
             if dist < min_dist:
                 min_dist = dist
-                owner = idx
+                owner_team = player['team_id']
         if min_dist < dist_thresh:
-            if owner == last_owner:
+            if owner_team == last_team:
                 owner_count += 1
             else:
                 owner_count = 1
-                last_owner = owner
+                last_team = owner_team
             if owner_count >= min_frames:
-                possession_history.append(owner)
+                possession_history.append(owner_team)
             else:
-                possession_history.append(None)
+                possession_history.append(last_team)
         else:
-            possession_history.append(None)
-            last_owner = None
+            possession_history.append(last_team)
             owner_count = 0
     return possession_history
 
@@ -92,13 +94,14 @@ def detect_shot(
     score_events: Optional[List[Optional[int]]] = None
 ) -> List[Optional[int]]:
     """
-    득점이 발생한 경우 무조건 슛으로 간주하고,
-    림 근처 도달 전 최근 N프레임의 공 궤적에서 진행방향이 불연속(각도 변화가 angle_thresh 이상)인 경우도 슛으로 판정.
-    반환: [None, None, 2, None, ...] (슛 발생시 소유자 인덱스)
+    림 도달 후 공 궤적에서 진행방향이 불연속(각도 변화가 angle_thresh 이상)인 경우만 슛으로 판정.
+    득점이 발생한 경우도 슛으로 간주.
+    반환: [None, None, 0, None, ...] (슛 발생시 소유 팀 인덱스)
     """
     shot_events = [None] * len(frames)
     ball_traj = []  # 최근 traj_window 프레임의 공 중심 좌표
     prev_owner = None
+    rim_reached = False
     for i, detections in enumerate(frames):
         ball, players, rim = parse_frame_detections(detections)
         owner = possession_history[i]
@@ -108,37 +111,45 @@ def detect_shot(
                 ball_traj.pop(0)
         # 1. 득점이 발생한 경우 무조건 슛으로 간주
         if score_events is not None and score_events[i] is not None:
-            shot_events[i] = score_events[i]
+            shot_events[i] = owner
             prev_owner = owner
+            rim_reached = False
             continue
-        # 2. 림 근처 도달 + 진행방향 불연속성 체크
+        # 2. 림 도달 후 진행방향 불연속성 체크
         if ball and rim and euclidean(bbox_center(ball), bbox_center(rim)) < rim_dist_thresh:
-            if len(ball_traj) == traj_window:
-                v1 = (ball_traj[-2][0] - ball_traj[-3][0], ball_traj[-2][1] - ball_traj[-3][1])
-                v2 = (ball_traj[-1][0] - ball_traj[-2][0], ball_traj[-1][1] - ball_traj[-2][1])
-                dot = v1[0]*v2[0] + v1[1]*v2[1]
-                mag1 = math.hypot(*v1)
-                mag2 = math.hypot(*v2)
-                if mag1 > 0 and mag2 > 0:
-                    cos_theta = dot / (mag1 * mag2)
-                    angle = math.degrees(math.acos(max(-1, min(1, cos_theta))))
-                    if angle > angle_thresh:
-                        shot_events[i] = prev_owner
+            rim_reached = True
+        if rim_reached and len(ball_traj) == traj_window:
+            v1 = (ball_traj[-2][0] - ball_traj[-3][0], ball_traj[-2][1] - ball_traj[-3][1])
+            v2 = (ball_traj[-1][0] - ball_traj[-2][0], ball_traj[-1][1] - ball_traj[-2][1])
+            dot = v1[0]*v2[0] + v1[1]*v2[1]
+            mag1 = math.hypot(*v1)
+            mag2 = math.hypot(*v2)
+            if mag1 > 0 and mag2 > 0:
+                cos_theta = dot / (mag1 * mag2)
+                angle = math.degrees(math.acos(max(-1, min(1, cos_theta))))
+                if angle > angle_thresh:
+                    shot_events[i] = owner
+                    rim_reached = False  # 한 번만 체크
         prev_owner = owner
     return shot_events
 
-def detect_score(frames: List[List[List[float]]], shot_events: List[Optional[int]], iou_thresh: float = 0.2) -> List[Optional[int]]:
+def detect_score(frames: List[List[List[float]]], shot_events: List[Optional[int]]) -> List[Optional[int]]:
     """
-    득점 발생 프레임 인덱스 반환. 공이 림 바운딩박스와 겹치면 득점.
-    반환: [None, None, None, 3, ...] (득점시 슛 선수 인덱스)
+    득점 발생 프레임 인덱스 반환. 공의 바운딩박스가 림의 바운딩박스 안에 완전히 들어가면 득점.
+    반환: [None, None, None, 0, ...] (득점시 슛 팀 인덱스)
     """
     score_events = [None] * len(frames)
     for i, detections in enumerate(frames):
         ball, players, rim = parse_frame_detections(detections)
         if not ball or not rim:
             continue
-        iou = bbox_iou(ball, rim)
-        if iou > iou_thresh:
+        # ball: (x, y, w, h), rim: (x, y, w, h)
+        bx1, by1 = ball[0] - ball[2]/2, ball[1] - ball[3]/2
+        bx2, by2 = ball[0] + ball[2]/2, ball[1] + ball[3]/2
+        rx1, ry1 = rim[0] - rim[2]/2, rim[1] - rim[3]/2
+        rx2, ry2 = rim[0] + rim[2]/2, rim[1] + rim[3]/2
+        # 공이 림 안에 완전히 들어가는지 체크
+        if bx1 >= rx1 and by1 >= ry1 and bx2 <= rx2 and by2 <= ry2:
             # 직전 프레임에서 슛이 있었는지 확인
             for j in range(i-1, -1, -1):
                 if shot_events[j] is not None:
@@ -167,9 +178,8 @@ def detect_rebound(frames: List[List[List[float]]], shot_events: List[Optional[i
 
 def detect_assist(frames: List[List[List[float]]], shot_events: List[Optional[int]], score_events: List[Optional[int]], possession_history: List[Optional[int]], team_ids: List[List[int]]) -> List[Optional[int]]:
     """
-    어시스트 발생 프레임 인덱스 반환. 득점 직전 마지막 소유권자가 슛 선수와 다르고, 같은 팀이면 어시스트.
-    team_ids: 각 프레임별 선수들의 team_id 리스트
-    반환: [None, None, None, 1, ...] (어시스트 선수 인덱스)
+    어시스트 발생 프레임 인덱스 반환. 득점 직전 마지막 소유권자가 슛 팀과 다르고, 같은 팀이면 어시스트.
+    반환: [None, None, None, 0, ...] (어시스트 팀 인덱스)
     """
     assist_events = [None] * len(frames)
     for i, scorer in enumerate(score_events):
@@ -185,4 +195,60 @@ def detect_assist(frames: List[List[List[float]]], shot_events: List[Optional[in
                             assist_events[i] = possession_history[j]
                     break
     return assist_events
+
+def extrapolate_ball(frames: List[List[List[float]]], max_missing: int = None) -> List[Optional[Tuple[float, float, float, float]]]:
+    """
+    공이 detection에서 사라진 경우, 직전 프레임의 진행방향대로 가상의 바운딩박스를 생성.
+    공이 다시 나타날 때까지 진행. 만약 가상의 공 바운딩박스가 선수나 림과 전혀 겹치지 않으면 마지막 바운딩박스를 유지.
+    반환: 각 프레임별 (x, y, w, h) 또는 None
+    """
+    ball_boxes = []
+    last_ball = None
+    last_vec = None
+    missing_count = 0
+    for i, detections in enumerate(frames):
+        # 공, 림, 선수 분리
+        ball = None
+        rim = None
+        players = []
+        for det in detections:
+            class_id, x, y, w, h, team_id = det
+            if class_id == 0:
+                ball = (x, y, w, h)
+            elif class_id == 1:
+                players.append((x, y, w, h))
+            elif class_id == 2:
+                rim = (x, y, w, h)
+        if ball:
+            if last_ball:
+                # 직전 프레임 벡터
+                last_vec = (ball[0] - last_ball[0], ball[1] - last_ball[1])
+            last_ball = ball
+            ball_boxes.append(ball)
+            missing_count = 0
+        else:
+            if last_ball and last_vec and (max_missing is None or missing_count < max_missing):
+                # 이전 벡터대로 이동
+                new_x = last_ball[0] + last_vec[0]
+                new_y = last_ball[1] + last_vec[1]
+                new_box = (new_x, new_y, last_ball[2], last_ball[3])
+                # 선수, 림과 겹치는지 확인
+                overlaps = False
+                for p in players:
+                    if bbox_iou(new_box, p) > 0:
+                        overlaps = True
+                        break
+                if rim and bbox_iou(new_box, rim) > 0:
+                    overlaps = True
+                if overlaps:
+                    ball_boxes.append(new_box)
+                    last_ball = new_box
+                else:
+                    # 겹치지 않으면 마지막 바운딩박스 유지
+                    ball_boxes.append(last_ball)
+                missing_count += 1
+            else:
+                ball_boxes.append(None)
+                missing_count = 0
+    return ball_boxes
 
