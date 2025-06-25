@@ -53,6 +53,7 @@ from ultralytics.utils.torch_utils import select_device, smart_inference_mode
 
 ## 수정 start
 from sklearn.cluster import KMeans
+from datetime import datetime
 ## 수정 end
 
 STREAM_WARNING = """
@@ -322,6 +323,9 @@ class BasePredictor:
             )
             self.run_callbacks("on_predict_start")
             for self.batch in self.dataset:
+                # 수정 시작
+                # in_ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                # 수정 끝
                 self.run_callbacks("on_predict_batch_start")
                 paths, im0s, s = self.batch
 
@@ -329,9 +333,16 @@ class BasePredictor:
                 with profilers[0]:
                     im = self.preprocess(im0s)
 
+                #
+                in_ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                # 
                 # Inference
                 with profilers[1]:
                     preds = self.inference(im, *args, **kwargs)
+                    # 수정 시작
+                    # for r in preds:
+                    #    setattr(r, 'in_ts', in_ts)
+                    # 수정 끝
                     if self.args.embed:
                         yield from [preds] if isinstance(preds, torch.Tensor) else preds  # yield embedding tensors
                         continue
@@ -343,6 +354,7 @@ class BasePredictor:
 
                 # Visualize, save, write results
                 n = len(im0s)
+                
                 for i in range(n):
                     self.seen += 1
                     self.results[i].speed = {
@@ -351,8 +363,8 @@ class BasePredictor:
                         "postprocess": profilers[2].dt * 1e3 / n,
                     }
                     if self.args.verbose or self.args.save or self.args.save_txt or self.args.show:
-                        s[i] += self.write_results(i, Path(paths[i]), im, s)
-
+                        # s[i] += self.write_results(i, Path(paths[i]), im, s)
+                        s[i] += self.write_results(i, Path(paths[i]), im, s, in_ts)
                 # Print batch results
                 if self.args.verbose:
                     LOGGER.info("\n".join(s))
@@ -403,7 +415,7 @@ class BasePredictor:
             self.args.imgsz = self.model.imgsz  # reuse imgsz from export metadata
         self.model.eval()
 
-    def write_results(self, i: int, p: Path, im: torch.Tensor, s: List[str]) -> str:
+    def write_results(self, i: int, p: Path, im: torch.Tensor, s: List[str], timestamp: str) -> str:
         """
         Write inference results to a file or directory.
 
@@ -443,6 +455,8 @@ class BasePredictor:
             )
 
         # Save results
+        # timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
         if self.args.save_txt:
             ## 수정 전
             # result.save_txt(f"{self.txt_path}.txt", save_conf=self.args.save_conf)
@@ -538,9 +552,9 @@ class BasePredictor:
                     if cls == player_class:
                         if j in selected_indices:
                             cluster = cluster_labels[selected_indices.index(j)]
-                            f.write(f"{cls} {' '.join(f'{x:.6f}' for x in xywhn)} {cluster}\n")
+                            f.write(f"{timestamp} {cls} {' '.join(f'{x:.6f}' for x in xywhn)} {cluster}\n")
                     elif cls == ball_class or cls == hoop_class:
-                        f.write(f"{cls} {' '.join(f'{x:.6f}' for x in xywhn)}\n")
+                        f.write(f"{timestamp} {cls} {' '.join(f'{x:.6f}' for x in xywhn)}\n")
                 
             ## 수정 후
         if self.args.save_crop:
