@@ -334,7 +334,7 @@ class BasePredictor:
                     im = self.preprocess(im0s)
 
                 #
-                in_ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                in_ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
                 # 
                 # Inference
                 with profilers[1]:
