@@ -20,3 +20,6 @@ yolov12env\Lib\site-packages\ultralytics\engine
 
 맨 뒤에 column이 team_0인지 team_1인지 구분!
 물론 바운딩 박스가 겹치면 잘못 인식하긴함.
+
+# 6/25 19:38 수정
+predictor.py timestamp 찍히게 수정
