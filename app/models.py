@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Date, ForeignKey, Time, Text
+from sqlalchemy import Column, Integer, String, Date, ForeignKey, Time, Text, JSON
 from sqlalchemy.orm import relationship
 from sqlalchemy.dialects.postgresql import JSONB
 from app.database import Base
@@ -18,6 +18,21 @@ class Game(Base):
     location = Column(String)
     team_a = Column(String)
     team_b = Column(String)
+    
+    # 관계 설정
+    scores = relationship("GameScore", back_populates="game")
+    players = relationship("GamePlayer", back_populates="game")
+    actions = relationship("Action", back_populates="game")
+
+class GameScore(Base):
+    __tablename__ = "game_scores"
+    id = Column(Integer, primary_key=True, index=True)
+    game_id = Column(Integer, ForeignKey("games.id"))
+    team = Column(String)
+    current_score = Column(Integer, default=0)
+    
+    # 관계 설정
+    game = relationship("Game", back_populates="scores")
 
 class GamePlayer(Base):
     __tablename__ = "game_players"
@@ -26,6 +41,10 @@ class GamePlayer(Base):
     player_id = Column(Integer, ForeignKey("players.id"))
     track_id = Column(Integer)
     team = Column(String)
+    
+    # 관계 설정
+    game = relationship("Game", back_populates="players")
+    player = relationship("Player")
 
 class Frame(Base):
     __tablename__ = "frames"
@@ -46,3 +65,6 @@ class Action(Base):
     team = Column(String)
     game_time = Column(Time)
     created_at = Column(String)
+    
+    # 관계 설정
+    game = relationship("Game", back_populates="actions")

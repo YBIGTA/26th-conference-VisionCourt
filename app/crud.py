@@ -1,6 +1,7 @@
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from app import models, schemas
 from datetime import time, datetime
+from typing import List, Optional
 
 def insert_action_from_json(db: Session, action_data: schemas.ActionIn):
     player = db.query(models.GamePlayer).filter(
@@ -33,3 +34,17 @@ def insert_action_from_json(db: Session, action_data: schemas.ActionIn):
     db.commit()
     db.refresh(new_action)
     return new_action
+
+def get_all_games(db: Session) -> List[models.Game]:
+    """모든 게임과 점수 정보를 조회합니다."""
+    return db.query(models.Game).options(
+        joinedload(models.Game.scores)
+    ).all()
+
+def get_game_by_id(db: Session, game_id: int) -> Optional[models.Game]:
+    """특정 게임의 상세 정보를 조회합니다 (점수 + 플레이어 정보 + 액션 정보)."""
+    return db.query(models.Game).options(
+        joinedload(models.Game.scores),
+        joinedload(models.Game.players).joinedload(models.GamePlayer.player),
+        joinedload(models.Game.actions)
+    ).filter(models.Game.id == game_id).first()
